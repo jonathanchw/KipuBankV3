@@ -59,7 +59,10 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     /// @notice External Wrapper contract for preview (and potentially swaps)
     IWrapper public wrapper;
 
+    /// @notice Total number of successful deposits.
     uint256 public s_totalDepositsCount;
+
+    /// @notice Total number of successful withdrawals.
     uint256 public s_totalWithdrawalsCount;
 
     /*////////////////////////////////////////////////////////////
@@ -81,13 +84,39 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                                ERRORS
     ////////////////////////////////////////////////////////////*/
 
+    /// @notice Thrown when the provided amount is zero.
     error ZeroAmount();
+
+    /// @notice Thrown when a deposit would exceed the global bank cap.
     error DepositWouldExceedCap(uint256 amountUSDC, uint256 remainingUSDC);
+
+    /// @notice Thrown when user tries to withdraw more than their balance.
     error InsufficientBalance(uint256 have, uint256 want);
+
+    /// @notice Thrown when the per-transaction withdrawal limit is exceeded.
     error WithdrawalLimitExceeded(uint256 amountUSDC, uint256 limitUSDC);
+
+    /// @notice Thrown when a provided address is the zero address.
     error InvalidAddress();
+
+    /// @notice Thrown when the swap path cannot be determined or would output zero USDC.
     error NoPathOrZeroOut();
+
+    /// @notice Thrown when a swap operation via Uniswap fails.
     error SwapFailed();
+
+    /// @notice Thrown when ETH is sent directly instead of using the deposit function.
+    error DirectETHNotAllowed();
+
+    /*////////////////////////////////////////////////////////////
+                              MODIFIERS
+    ////////////////////////////////////////////////////////////*/
+
+    /// @dev Reverts with ZeroAmount if `amount` is zero.
+    modifier nonZeroAmount(uint256 amount) {
+        if (amount == 0) revert ZeroAmount();
+        _;
+    }
 
     /*////////////////////////////////////////////////////////////
                              CONSTRUCTOR
@@ -165,9 +194,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
         address _token,
         uint256 _amount,
         uint256 _minOutUSDC
-    ) external payable nonReentrant {
-        if (_amount == 0) revert ZeroAmount();
-
+    ) external payable nonReentrant nonZeroAmount(_amount) {
         // 1) Direct deposit of USDC (no swap)
         if (_token == i_usdc) {
             IERC20(i_usdc).safeTransferFrom(msg.sender, address(this), _amount);
@@ -178,7 +205,10 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
             s_balances[msg.sender][i_usdc] += _amount;
             s_totalDepositedUSDC += _amount;
-            ++s_totalDepositsCount;
+
+            unchecked {
+                ++s_totalDepositsCount;
+            }
 
             emit DepositUSDC(msg.sender, _amount);
             return;
@@ -216,7 +246,10 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
             s_balances[msg.sender][i_usdc] += usdcReceived;
             s_totalDepositedUSDC += usdcReceived;
-            ++s_totalDepositsCount;
+
+            unchecked {
+                ++s_totalDepositsCount;
+            }
 
             emit DepositConvertedToUSDC(msg.sender, address(0), _amount, usdcReceived);
             return;
@@ -280,7 +313,10 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
         s_balances[msg.sender][i_usdc] += usdcGot;
         s_totalDepositedUSDC += usdcGot;
-        ++s_totalDepositsCount;
+
+        unchecked {
+            ++s_totalDepositsCount;
+        }
 
         emit DepositConvertedToUSDC(msg.sender, _token, _amount, usdcGot);
     }
@@ -293,9 +329,11 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
      * @notice Withdraw USDC from the bank.
      * @param _amountUSDC Amount in USDC to withdraw (6 decimals).
      */
-    function withdrawUSDC(uint256 _amountUSDC) external nonReentrant {
-        if (_amountUSDC == 0) revert ZeroAmount();
-
+    function withdrawUSDC(uint256 _amountUSDC)
+        external
+        nonReentrant
+        nonZeroAmount(_amountUSDC)
+    {
         uint256 bal = s_balances[msg.sender][i_usdc];
         if (_amountUSDC > bal) revert InsufficientBalance(bal, _amountUSDC);
 
@@ -306,9 +344,9 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
         unchecked {
             s_balances[msg.sender][i_usdc] = bal - _amountUSDC;
+            s_totalDepositedUSDC -= _amountUSDC;
+            ++s_totalWithdrawalsCount;
         }
-        s_totalDepositedUSDC -= _amountUSDC;
-        ++s_totalWithdrawalsCount;
 
         IERC20(i_usdc).safeTransfer(msg.sender, _amountUSDC);
         emit WithdrawUSDC(msg.sender, _amountUSDC);
@@ -327,11 +365,15 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                                FALLBACKS
     ////////////////////////////////////////////////////////////*/
 
+    function _revertDirectETH() private pure {
+        revert DirectETHNotAllowed();
+    }
+
     receive() external payable {
-        revert("Use deposit for ETH");
+        _revertDirectETH();
     }
 
     fallback() external payable {
-        revert("Use deposit for ETH");
+        _revertDirectETH();
     }
 }
