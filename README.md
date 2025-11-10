@@ -1,75 +1,75 @@
 # KipuBankV3
 
-## Descripción General
+## Overview
 
-`KipuBankV3` es una evolución del contrato `KipuBankV2`, diseñada para funcionar como una aplicación DeFi avanzada e integrada con Uniswap V2.  
-Permite depósitos en múltiples tokens, los convierte automáticamente a **USDC**, y mantiene la lógica principal del banco, incluyendo el límite máximo global (`bankCap`).  
-El proyecto fue desarrollado en **Foundry**, con enfoque en seguridad, modularidad y cobertura de pruebas superior al 50%.
+`KipuBankV3` is an evolution of the `KipuBankV2` contract, designed to function as an advanced DeFi application integrated with Uniswap V2.  
+It allows deposits in multiple tokens, automatically converts them to **USDC**, and maintains the main banking logic, including the global maximum limit (`bankCap`).  
+The project was developed using **Foundry**, focusing on security, modularity, and achieving over 50% test coverage.
 
 ---
 
-## Mejoras Implementadas
+## Implemented Improvements
 
-1. **Integración con Uniswap V2**  
-   Se agregó compatibilidad con el router de Uniswap V2 (`IUniswapV2Router02`), permitiendo realizar swaps automáticos de cualquier token ERC-20 hacia USDC.
+1. **Uniswap V2 Integration**  
+   Added compatibility with the Uniswap V2 router (`IUniswapV2Router02`), enabling automatic swaps of any ERC-20 token into USDC.
 
-2. **Depósitos Generalizados**  
-   Se pueden realizar depósitos en:
-   - ETH (token nativo)
-   - USDC (depósito directo)
-   - Cualquier otro token ERC-20 con par a USDC.
+2. **Generalized Deposits**  
+   Deposits can be made in:
+   - ETH (native token)
+   - USDC (direct deposit)
+   - Any other ERC-20 token paired with USDC.
 
-3. **Conversión Automática a USDC**  
-   Tokens distintos a USDC se convierten mediante el router y se acreditan al balance del usuario.
+3. **Automatic Conversion to USDC**  
+   Tokens other than USDC are converted via the router and credited to the user's balance.
 
-4. **Lógica de Seguridad y Control de Acceso**  
-   - Uso de `AccessControl` en lugar de `Ownable`.
-   - Protección contra reentradas con `ReentrancyGuard`.
-   - Manejo seguro de tokens con `SafeERC20`.
+4. **Security and Access Control Logic**  
+   - Uses `AccessControl` instead of `Ownable`.
+   - Reentrancy protection with `ReentrancyGuard`.
+   - Secure token handling with `SafeERC20`.
 
-5. **Wrapper Externo**  
-   Se implementó un contrato `Wrapper` auxiliar que encapsula la lógica de swap, mejorando la legibilidad y el mantenimiento del código.
+5. **External Wrapper**  
+   A helper `Wrapper` contract was implemented to encapsulate swap logic, improving code readability and maintainability.
 
 6. **Bank Cap**  
-   Se mantiene un límite máximo de USDC total que el banco puede almacenar.  
-   Si un depósito supera ese límite, la transacción revierte con `DepositWouldExceedCap`.
+   A maximum USDC cap is maintained for the total balance the bank can hold.  
+   If a deposit exceeds this limit, the transaction reverts with `DepositWouldExceedCap`.
 
-7. **Cobertura de Pruebas**  
-   Se realizaron pruebas unitarias con Foundry (`forge test`), alcanzando una cobertura total superior al 50%.
+7. **Test Coverage**  
+   Unit tests were performed using Foundry (`forge test`), achieving total coverage above 50%.
 
 ---
 
-## Instrucciones de Despliegue
+## Deployment Instructions
 
-### 1. Crear archivo `.env`
+### 1. Create `.env` file
 
 ```bash
-PRIVATE_KEY=0xTU_CLAVE_PRIVADA_CON_FONDOS_EN_SEPOLIA
-ADMIN=0xDIRECCION_DEL_ADMIN
+PRIVATE_KEY=0xYOUR_PRIVATE_KEY_WITH_FUNDS_ON_SEPOLIA
+ADMIN=0xADMIN_ADDRESS
 SEPOLIA_UNI_V2_ROUTER=0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3
 SEPOLIA_USDC=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
 INITIAL_BANK_CAP_USDC=100000000000
 ```
 
-### 2. Compilar
+### 2. Build
 
 ```bash
 forge build
 ```
 
-### 3. Desplegar en red local (Anvil)
+### 3. Deploy to Local Network (Anvil)
 
 ```bash
 anvil
 ```
 
-En otra terminal:
+In another terminal:
 
 ```bash
 forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-### 4. Desplegar en Sepolia
+### 4. Deploy to Sepolia
 
 ```bash
 forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script --rpc-url https://rpc.sepolia.ethpandaops.io --broadcast --verify
@@ -77,27 +77,27 @@ forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script --rpc-url https://rp
 
 ---
 
-## Interacción con el Contrato
+## Contract Interaction
 
-### Depositar USDC directamente
+### Deposit USDC Directly
 
 ```solidity
 deposit(USDC_ADDRESS, amount, 0);
 ```
 
-### Depositar otro token ERC-20
+### Deposit Another ERC-20 Token
 
 ```solidity
 deposit(TOKEN_ADDRESS, amount, minOutUSDC);
 ```
 
-### Depositar ETH
+### Deposit ETH
 
 ```solidity
 deposit(address(0), msg.value, minOutUSDC);
 ```
 
-### Retirar USDC
+### Withdraw USDC
 
 ```solidity
 withdrawUSDC(amountUSDC);
@@ -105,32 +105,31 @@ withdrawUSDC(amountUSDC);
 
 ---
 
-## Decisiones de Diseño y Trade-offs
+## Design Decisions and Trade-offs
 
-- La lógica de swap se delega al contrato `Wrapper` para simplificar el contrato principal.  
-- Se priorizó la seguridad mediante librerías de OpenZeppelin.  
-- Se usaron variables `immutable` para optimizar gas.  
-- Diseño modular que permite sustituir el `Wrapper` sin redeployar `KipuBankV3`.
-
----
-
-## Análisis de Amenazas
-
-| Riesgo | Descripción | Mitigación |
-|--------|--------------|------------|
-| Reentrancy | Riesgo en retiros o swaps | `ReentrancyGuard` |
-| Manipulación de precios | Cambios bruscos en pares USDC/WETH | Uso de `amountOutMin` |
-| Exceso de depósitos | Superar bankCap | Validación antes de actualizar balances |
-| Roles inseguros | Acceso no autorizado | `AccessControl` |
-| Tokens no estándar | Tokens sin comportamiento ERC20 | Validación de interfaz |
+- The swap logic is delegated to the `Wrapper` contract to simplify the main contract.  
+- Security was prioritized through OpenZeppelin libraries.  
+- `immutable` variables were used to optimize gas.  
+- Modular design allows the `Wrapper` to be replaced without redeploying `KipuBankV3`.
 
 ---
 
-## Cobertura de Pruebas
+## Threat Analysis
 
-- **Cobertura total:** superior al 50%
-- **Framework:** Foundry  
-- **Comando:**
+| Risk | Description | Mitigation |
+|------|--------------|-------------|
+| Reentrancy | Risk in withdrawals or swaps | `ReentrancyGuard` |
+| Price Manipulation | Sudden changes in USDC/WETH pairs | Use of `amountOutMin` |
+| Excessive Deposits | Exceeding bankCap | Validation before updating balances |
+| Insecure Roles | Unauthorized access | `AccessControl` |
+| Non-standard Tokens | Tokens not following ERC20 behavior | Interface validation |
+
+---
+
+## Test Coverage
+
+- **Total coverage:** above 50%
+- **Framework:** Foundry 
 
 ```bash
 forge coverage --report summary
@@ -138,21 +137,21 @@ forge coverage --report summary
 
 ---
 
-## Métodos de Prueba
+## Testing Methods
 
 - **Mocks:**  
-  `MockRouter` y `MockERC20` simulan Uniswap y tokens.
-- **Escenarios probados:**  
-  - Depósitos en USDC, ETH y otros tokens.  
-  - Retiros válidos e inválidos.  
-  - Control de roles.  
-  - Límites de depósito.  
-- **Pruebas de revert:**  
-  Se validaron errores personalizados como `ZeroAmount`, `DepositWouldExceedCap` y `SwapFailed`.
+  `MockRouter` and `MockERC20` simulate Uniswap and token behavior.
+- **Tested Scenarios:**  
+  - Deposits in USDC, ETH, and other tokens.  
+  - Valid and invalid withdrawals.  
+  - Role control.  
+  - Deposit limits.  
+- **Revert Tests:**  
+  Custom errors such as `ZeroAmount`, `DepositWouldExceedCap`, and `SwapFailed` were validated.
 
 ---
 
-## Enlaces
+## Links
 
-**Contrato verificado (Sepolia):**  
+**Verified Contract (Sepolia):**  
 [https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code](https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code)

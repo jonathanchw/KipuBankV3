@@ -11,28 +11,28 @@ import {IWrapper} from "./interfaces/IWrapper.sol";
 
 /**
  * @title KipuBankV3
- * @notice Banco DeFi que acepta ETH, USDC y cualquier ERC20 con par en Uniswap V2,
- *         swappea todo a USDC y mantiene la contabilidad interna en USDC.
+ * @notice DeFi bank that accepts ETH, USDC and any ERC20 token with a pair on Uniswap V2,
+ *         swaps everything to USDC and keeps internal accounting in USDC.
  *
  * @dev
- * - Integra Uniswap V2 vía router y Wrapper (para preview).
- * - Aplica un bankCap global en unidades de USDC (6 decimales).
- * - Preserva la idea de depósitos, retiros y control de roles de KipuBankV2.
+ * - Integrates Uniswap V2 via router and Wrapper (for preview).
+ * - Applies a global bankCap in USDC units (6 decimals).
+ * - Preserves the concept of deposits, withdrawals and role control from KipuBankV2.
  */
 contract KipuBankV3 is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*////////////////////////////////////////////////////////////
-                          ROLES & CONSTANTES
+                          ROLES & CONSTANTS
     ////////////////////////////////////////////////////////////*/
 
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
-    /// @notice Decimales de USDC (se asume 6)
+    /// @notice USDC decimals (assumed 6)
     uint8 public constant USDC_DECIMALS = 6;
 
     /*////////////////////////////////////////////////////////////
-                             INMUTABLES
+                             IMMUTABLES
     ////////////////////////////////////////////////////////////*/
 
     IUniswapV2Router02 public immutable i_router;
@@ -43,20 +43,20 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                                STATE
     ////////////////////////////////////////////////////////////*/
 
-    /// @notice bankCap global en unidades de USDC (6 decimales)
+    /// @notice Global bankCap in USDC units (6 decimals)
     uint256 public s_bankCapUSDC;
 
-    /// @notice total depositado en el banco, expresado en USDC (6 decimales)
+    /// @notice Total deposited in the bank, expressed in USDC (6 decimals)
     uint256 public s_totalDepositedUSDC;
 
-    /// @notice balance interno de los usuarios en USDC
-    /// usamos mapping anidado para mantener compat con el diseño anterior
+    /// @notice Internal user balances in USDC
+    /// uses nested mapping for backward compatibility with previous design
     mapping(address => mapping(address => uint256)) private s_balances;
 
-    /// @notice límite de retiro por transacción (por token). Usamos i_usdc como clave.
+    /// @notice Withdrawal limit per transaction (per token). Uses i_usdc as key.
     mapping(address => uint256) public s_withdrawalLimitUSDC;
 
-    /// @notice contrato externo Wrapper para preview (y potencialmente swaps)
+    /// @notice External Wrapper contract for preview (and potentially swaps)
     IWrapper public wrapper;
 
     uint256 public s_totalDepositsCount;
@@ -94,10 +94,10 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     ////////////////////////////////////////////////////////////*/
 
     /**
-     * @param _router Dirección del router de Uniswap V2
-     * @param _usdc Dirección del token USDC (6 decimales)
-     * @param _initialCapUSDC bankCap inicial en unidades USDC (6 decimales)
-     * @param _admin Dirección admin que recibe DEFAULT_ADMIN_ROLE y OPERATOR_ROLE
+     * @param _router Uniswap V2 router address
+     * @param _usdc USDC token address (6 decimals)
+     * @param _initialCapUSDC Initial bankCap in USDC units (6 decimals)
+     * @param _admin Admin address that receives DEFAULT_ADMIN_ROLE and OPERATOR_ROLE
      */
     constructor(
         address _router,
@@ -124,7 +124,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     ////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Actualiza el bankCap (en USDC, 6 decimales)
+     * @notice Updates the bankCap (in USDC, 6 decimals)
      */
     function setBankCapUSDC(uint256 _newCap) external onlyRole(DEFAULT_ADMIN_ROLE) {
         s_bankCapUSDC = _newCap;
@@ -132,15 +132,15 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     }
 
     /**
-     * @notice Setea el límite de retiro por transacción en USDC
-     * @dev Usamos i_usdc como clave de s_withdrawalLimitUSDC
+     * @notice Sets the per-transaction withdrawal limit in USDC
+     * @dev Uses i_usdc as the key of s_withdrawalLimitUSDC
      */
     function setWithdrawalLimitUSDC(uint256 _limit) external onlyRole(OPERATOR_ROLE) {
         s_withdrawalLimitUSDC[i_usdc] = _limit;
     }
 
     /**
-     * @notice Actualiza la dirección del Wrapper externo
+     * @notice Updates the external Wrapper contract address
      */
     function setWrapper(address _wrapper) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_wrapper == address(0)) revert InvalidAddress();
@@ -153,147 +153,145 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     ////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Depositar tokens en el banco (ETH, USDC o cualquier ERC20 con par a USDC).
-     * @param _token Dirección del token a depositar:
-     *        - address(0) para ETH
-     *        - i_usdc para USDC
-     *        - otro ERC20 soportado por Uniswap V2
-     * @param _amount Cantidad en unidades nativas del token
-     * @param _minOutUSDC Mínimo USDC aceptado (para proteger contra slippage)
+     * @notice Deposit tokens into the bank (ETH, USDC or any ERC20 with a pair to USDC).
+     * @param _token Address of the token to deposit:
+     *        - address(0) for ETH
+     *        - i_usdc for USDC
+     *        - another ERC20 supported by Uniswap V2
+     * @param _amount Amount in native units of the token
+     * @param _minOutUSDC Minimum accepted USDC (to protect against slippage)
      */
     function deposit(
-    address _token,
-    uint256 _amount,
-    uint256 _minOutUSDC
+        address _token,
+        uint256 _amount,
+        uint256 _minOutUSDC
     ) external payable nonReentrant {
-    if (_amount == 0) revert ZeroAmount();
+        if (_amount == 0) revert ZeroAmount();
 
-    // 1) Depósito directo de USDC (sin swap)
-    if (_token == i_usdc) {
-        IERC20(i_usdc).safeTransferFrom(msg.sender, address(this), _amount);
+        // 1) Direct deposit of USDC (no swap)
+        if (_token == i_usdc) {
+            IERC20(i_usdc).safeTransferFrom(msg.sender, address(this), _amount);
 
-        if (s_totalDepositedUSDC + _amount > s_bankCapUSDC) {
-            revert DepositWouldExceedCap(_amount, s_bankCapUSDC - s_totalDepositedUSDC);
+            if (s_totalDepositedUSDC + _amount > s_bankCapUSDC) {
+                revert DepositWouldExceedCap(_amount, s_bankCapUSDC - s_totalDepositedUSDC);
+            }
+
+            s_balances[msg.sender][i_usdc] += _amount;
+            s_totalDepositedUSDC += _amount;
+            ++s_totalDepositsCount;
+
+            emit DepositUSDC(msg.sender, _amount);
+            return;
         }
 
-        s_balances[msg.sender][i_usdc] += _amount;
-        s_totalDepositedUSDC += _amount;
-        ++s_totalDepositsCount;
+        // 2) Deposit of ETH (token == address(0))
+        if (_token == address(0)) {
+            if (msg.value != _amount) revert ZeroAmount();
 
-        emit DepositUSDC(msg.sender, _amount);
-        return;
-    }
+            address[] memory path1;
+            path1 = new address ;
+            path1[0] = i_weth;
+            path1[1] = i_usdc;
 
-    // 2) Depósito de ETH (token == address(0))
-    if (_token == address(0)) {
-        if (msg.value != _amount) revert ZeroAmount();
+            uint256[] memory amountsOut = i_router.getAmountsOut(_amount, path1);
+            uint256 expectedUSDCOutEth = amountsOut[amountsOut.length - 1];
+            if (expectedUSDCOutEth == 0) revert NoPathOrZeroOut();
 
+            if (s_totalDepositedUSDC + expectedUSDCOutEth > s_bankCapUSDC) {
+                revert DepositWouldExceedCap(
+                    expectedUSDCOutEth,
+                    s_bankCapUSDC - s_totalDepositedUSDC
+                );
+            }
 
-        address[] memory path1;
-        path1 = new address[](2);     
-        path1[0] = i_weth;
-        path1[1] = i_usdc;
+            uint256[] memory results = i_router.swapExactETHForTokens{value: _amount}(
+                _minOutUSDC,
+                path1,
+                address(this),
+                block.timestamp + 300
+            );
 
-        uint256[] memory amountsOut = i_router.getAmountsOut(_amount, path1);
-        uint256 expectedUSDCOutEth = amountsOut[amountsOut.length - 1];
-        if (expectedUSDCOutEth == 0) revert NoPathOrZeroOut();
+            uint256 usdcReceived = results[results.length - 1];
+            if (usdcReceived == 0) revert SwapFailed();
 
-        if (s_totalDepositedUSDC + expectedUSDCOutEth > s_bankCapUSDC) {
+            s_balances[msg.sender][i_usdc] += usdcReceived;
+            s_totalDepositedUSDC += usdcReceived;
+            ++s_totalDepositsCount;
+
+            emit DepositConvertedToUSDC(msg.sender, address(0), _amount, usdcReceived);
+            return;
+        }
+
+        // 3) Deposit of an arbitrary ERC20 with a pair to USDC
+        uint256 expectedUSDCOut;
+
+        if (address(wrapper) != address(0)) {
+            // Use the Wrapper to preview the swap token -> USDC
+            expectedUSDCOut = wrapper.previewSwapToUsdc(_token, _amount);
+        } else {
+            // Fallback: calculate route token -> WETH -> USDC directly in the router
+            address[] memory pathPreview;
+            pathPreview = new address ;
+            pathPreview[0] = _token;
+            pathPreview[1] = i_weth;
+            pathPreview[2] = i_usdc;
+
+            uint256[] memory est = i_router.getAmountsOut(_amount, pathPreview);
+            expectedUSDCOut = est[est.length - 1];
+        }
+
+        if (expectedUSDCOut == 0) revert NoPathOrZeroOut();
+        if (s_totalDepositedUSDC + expectedUSDCOut > s_bankCapUSDC) {
             revert DepositWouldExceedCap(
-                expectedUSDCOutEth,
+                expectedUSDCOut,
                 s_bankCapUSDC - s_totalDepositedUSDC
             );
         }
 
-        uint256[] memory results = i_router.swapExactETHForTokens{value: _amount}(
+        // Transfer tokens to the bank
+        IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
+
+        // Swap token -> USDC via router (token -> WETH -> USDC or WETH -> USDC)
+        address[] memory path;
+        if (_token == i_weth) {
+            path = new address ;
+            path[0] = i_weth;
+            path[1] = i_usdc;
+        } else {
+            path = new address ;
+            path[0] = _token;
+            path[1] = i_weth;
+            path[2] = i_usdc;
+        }
+
+        IERC20(_token).approve(address(i_router), 0);
+        IERC20(_token).approve(address(i_router), _amount);
+
+        uint256[] memory res = i_router.swapExactTokensForTokens(
+            _amount,
             _minOutUSDC,
-            path1,
+            path,
             address(this),
             block.timestamp + 300
         );
 
-        uint256 usdcReceived = results[results.length - 1];
-        if (usdcReceived == 0) revert SwapFailed();
+        uint256 usdcGot = res[res.length - 1];
+        if (usdcGot == 0) revert SwapFailed();
 
-        s_balances[msg.sender][i_usdc] += usdcReceived;
-        s_totalDepositedUSDC += usdcReceived;
+        s_balances[msg.sender][i_usdc] += usdcGot;
+        s_totalDepositedUSDC += usdcGot;
         ++s_totalDepositsCount;
 
-        emit DepositConvertedToUSDC(msg.sender, address(0), _amount, usdcReceived);
-        return;
+        emit DepositConvertedToUSDC(msg.sender, _token, _amount, usdcGot);
     }
-
-    // 3) Depósito de un ERC20 arbitrario con par a USDC
-    uint256 expectedUSDCOut;
-
-    if (address(wrapper) != address(0)) {
-        // Usamos el Wrapper para hacer el preview del swap token -> USDC
-        expectedUSDCOut = wrapper.previewSwapToUsdc(_token, _amount);
-    } else {
-        // Fallback: calculamos ruta token -> WETH -> USDC directo en el router
-        address[] memory pathPreview;
-        pathPreview = new address[](3);
-        pathPreview[0] = _token;
-        pathPreview[1] = i_weth;
-        pathPreview[2] = i_usdc;
-
-        uint256[] memory est = i_router.getAmountsOut(_amount, pathPreview);
-        expectedUSDCOut = est[est.length - 1];
-    }
-
-    if (expectedUSDCOut == 0) revert NoPathOrZeroOut();
-    if (s_totalDepositedUSDC + expectedUSDCOut > s_bankCapUSDC) {
-        revert DepositWouldExceedCap(
-            expectedUSDCOut,
-            s_bankCapUSDC - s_totalDepositedUSDC
-        );
-    }
-
-    // Transferimos los tokens al banco
-    IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
-
-    // Swappeamos token -> USDC vía router (token -> WETH -> USDC o WETH -> USDC)
-    address[] memory path;
-    if (_token == i_weth) {
-        path = new address[](2);
-        path[0] = i_weth;
-        path[1] = i_usdc;
-    } else {
-        path = new address[](3);
-        path[0] = _token;
-        path[1] = i_weth;
-        path[2] = i_usdc;
-    }
-
-    IERC20(_token).approve(address(i_router), 0);
-    IERC20(_token).approve(address(i_router), _amount);
-
-    uint256[] memory res = i_router.swapExactTokensForTokens(
-        _amount,
-        _minOutUSDC,
-        path,
-        address(this),
-        block.timestamp + 300
-    );
-
-    uint256 usdcGot = res[res.length - 1];
-    if (usdcGot == 0) revert SwapFailed();
-
-    s_balances[msg.sender][i_usdc] += usdcGot;
-    s_totalDepositedUSDC += usdcGot;
-    ++s_totalDepositsCount;
-
-    emit DepositConvertedToUSDC(msg.sender, _token, _amount, usdcGot);
-}
-
 
     /*////////////////////////////////////////////////////////////
                                WITHDRAWALS
     ////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Retirar USDC del banco.
-     * @param _amountUSDC Cantidad en USDC a retirar (6 decimales).
+     * @notice Withdraw USDC from the bank.
+     * @param _amountUSDC Amount in USDC to withdraw (6 decimals).
      */
     function withdrawUSDC(uint256 _amountUSDC) external nonReentrant {
         if (_amountUSDC == 0) revert ZeroAmount();
@@ -320,7 +318,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                                VIEWS
     ////////////////////////////////////////////////////////////*/
 
-    /// @notice Devuelve el balance interno del usuario en USDC
+    /// @notice Returns the user's internal balance in USDC
     function getUSDCBalance(address _user) external view returns (uint256) {
         return s_balances[_user][i_usdc];
     }
