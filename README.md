@@ -154,8 +154,5 @@ forge coverage --report summary
 
 ## Enlaces
 
-**Repositorio GitHub:**  
-https://github.com/usuario/KipuBankV3
-
 **Contrato verificado (Sepolia):**  
-(Agregar URL de verificación en Etherscan o Blockscout una vez desplegado)
+[https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code](https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code)
