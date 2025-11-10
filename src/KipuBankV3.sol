@@ -219,7 +219,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
             if (msg.value != _amount) revert ZeroAmount();
 
             address[] memory path1;
-            path1 = new address ;
+            path1 = new address[](2);
             path1[0] = i_weth;
             path1[1] = i_usdc;
 
@@ -264,7 +264,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
         } else {
             // Fallback: calculate route token -> WETH -> USDC directly in the router
             address[] memory pathPreview;
-            pathPreview = new address ;
+            pathPreview = new address[](3) ;
             pathPreview[0] = _token;
             pathPreview[1] = i_weth;
             pathPreview[2] = i_usdc;
@@ -287,11 +287,11 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
         // Swap token -> USDC via router (token -> WETH -> USDC or WETH -> USDC)
         address[] memory path;
         if (_token == i_weth) {
-            path = new address ;
+            path = new address[](2);
             path[0] = i_weth;
             path[1] = i_usdc;
         } else {
-            path = new address ;
+            path = new address[](3);
             path[0] = _token;
             path[1] = i_weth;
             path[2] = i_usdc;
