@@ -35,8 +35,13 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                              IMMUTABLES
     ////////////////////////////////////////////////////////////*/
 
+    /// @notice Uniswap V2 Router contract for token swaps
     IUniswapV2Router02 public immutable i_router;
+    
+    /// @notice USDC token address (6 decimals)
     address public immutable i_usdc;
+    
+    /// @notice Wrapped ETH (WETH) token address
     address public immutable i_weth;
 
     /*////////////////////////////////////////////////////////////
@@ -69,15 +74,34 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                                EVENTS
     ////////////////////////////////////////////////////////////*/
 
+    /// @notice Emitted when a user deposits USDC directly.
+    /// @param user The address of the user making the deposit
+    /// @param usdcAmount The amount of USDC deposited
     event DepositUSDC(address indexed user, uint256 usdcAmount);
+    
+    /// @notice Emitted when a user deposits a token that is converted to USDC.
+    /// @param user The address of the user making the deposit
+    /// @param fromToken The address of the token being deposited (address(0) for ETH)
+    /// @param fromAmount The amount of the original token deposited
+    /// @param usdcAmount The amount of USDC received after conversion
     event DepositConvertedToUSDC(
         address indexed user,
         address indexed fromToken,
         uint256 fromAmount,
         uint256 usdcAmount
     );
+    
+    /// @notice Emitted when a user withdraws USDC from the bank.
+    /// @param user The address of the user making the withdrawal
+    /// @param usdcAmount The amount of USDC withdrawn
     event WithdrawUSDC(address indexed user, uint256 usdcAmount);
+    
+    /// @notice Emitted when the bank cap is updated.
+    /// @param newCapUSDC The new bank cap in USDC units
     event BankCapUpdated(uint256 newCapUSDC);
+    
+    /// @notice Emitted when the wrapper contract address is updated.
+    /// @param newWrapper The new wrapper contract address
     event WrapperUpdated(address newWrapper);
 
     /*////////////////////////////////////////////////////////////
@@ -88,12 +112,18 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     error ZeroAmount();
 
     /// @notice Thrown when a deposit would exceed the global bank cap.
+    /// @param amountUSDC The amount in USDC that was attempted to deposit
+    /// @param remainingUSDC The remaining capacity before reaching the bank cap
     error DepositWouldExceedCap(uint256 amountUSDC, uint256 remainingUSDC);
 
     /// @notice Thrown when user tries to withdraw more than their balance.
+    /// @param have The current balance the user has
+    /// @param want The amount the user is attempting to withdraw
     error InsufficientBalance(uint256 have, uint256 want);
 
     /// @notice Thrown when the per-transaction withdrawal limit is exceeded.
+    /// @param amountUSDC The amount in USDC that was attempted to withdraw
+    /// @param limitUSDC The maximum allowed withdrawal limit per transaction
     error WithdrawalLimitExceeded(uint256 amountUSDC, uint256 limitUSDC);
 
     /// @notice Thrown when a provided address is the zero address.
@@ -112,9 +142,29 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                               MODIFIERS
     ////////////////////////////////////////////////////////////*/
 
+    /// @notice Validates that the provided amount is not zero.
     /// @dev Reverts with ZeroAmount if `amount` is zero.
+    /// @param amount The amount to validate
     modifier nonZeroAmount(uint256 amount) {
         if (amount == 0) revert ZeroAmount();
+        _;
+    }
+
+    /// @notice Validates that the provided address is not the zero address.
+    /// @dev Reverts with InvalidAddress if `addr` is the zero address.
+    /// @param addr The address to validate
+    modifier validAddress(address addr) {
+        if (addr == address(0)) revert InvalidAddress();
+        _;
+    }
+
+    /// @notice Checks that the deposit doesn't exceed bank capacity.
+    /// @dev Reverts with DepositWouldExceedCap if adding the amount would exceed the bank cap.
+    /// @param amountUSDC The amount in USDC to check against the bank cap
+    modifier withinBankCap(uint256 amountUSDC) {
+        if (s_totalDepositedUSDC + amountUSDC > s_bankCapUSDC) {
+            revert DepositWouldExceedCap(amountUSDC, s_bankCapUSDC - s_totalDepositedUSDC);
+        }
         _;
     }
 
@@ -154,6 +204,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
     /**
      * @notice Updates the bankCap (in USDC, 6 decimals)
+     * @param _newCap The new bank cap in USDC units (6 decimals)
      */
     function setBankCapUSDC(uint256 _newCap) external onlyRole(DEFAULT_ADMIN_ROLE) {
         s_bankCapUSDC = _newCap;
@@ -163,6 +214,7 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     /**
      * @notice Sets the per-transaction withdrawal limit in USDC
      * @dev Uses i_usdc as the key of s_withdrawalLimitUSDC
+     * @param _limit The withdrawal limit in USDC units (6 decimals)
      */
     function setWithdrawalLimitUSDC(uint256 _limit) external onlyRole(OPERATOR_ROLE) {
         s_withdrawalLimitUSDC[i_usdc] = _limit;
@@ -170,9 +222,13 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
 
     /**
      * @notice Updates the external Wrapper contract address
+     * @param _wrapper The new wrapper contract address
      */
-    function setWrapper(address _wrapper) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_wrapper == address(0)) revert InvalidAddress();
+    function setWrapper(address _wrapper) 
+        external 
+        onlyRole(DEFAULT_ADMIN_ROLE) 
+        validAddress(_wrapper) 
+    {
         wrapper = IWrapper(_wrapper);
         emit WrapperUpdated(_wrapper);
     }
@@ -203,10 +259,9 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
                 revert DepositWouldExceedCap(_amount, s_bankCapUSDC - s_totalDepositedUSDC);
             }
 
-            s_balances[msg.sender][i_usdc] += _amount;
-            s_totalDepositedUSDC += _amount;
-
             unchecked {
+                s_balances[msg.sender][i_usdc] += _amount;
+                s_totalDepositedUSDC += _amount;
                 ++s_totalDepositsCount;
             }
 
@@ -244,10 +299,9 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
             uint256 usdcReceived = results[results.length - 1];
             if (usdcReceived == 0) revert SwapFailed();
 
-            s_balances[msg.sender][i_usdc] += usdcReceived;
-            s_totalDepositedUSDC += usdcReceived;
-
             unchecked {
+                s_balances[msg.sender][i_usdc] += usdcReceived;
+                s_totalDepositedUSDC += usdcReceived;
                 ++s_totalDepositsCount;
             }
 
@@ -311,10 +365,9 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
         uint256 usdcGot = res[res.length - 1];
         if (usdcGot == 0) revert SwapFailed();
 
-        s_balances[msg.sender][i_usdc] += usdcGot;
-        s_totalDepositedUSDC += usdcGot;
-
         unchecked {
+            s_balances[msg.sender][i_usdc] += usdcGot;
+            s_totalDepositedUSDC += usdcGot;
             ++s_totalDepositsCount;
         }
 
@@ -357,6 +410,8 @@ contract KipuBankV3 is AccessControl, ReentrancyGuard {
     ////////////////////////////////////////////////////////////*/
 
     /// @notice Returns the user's internal balance in USDC
+    /// @param _user The address of the user to query
+    /// @return The user's balance in USDC units (6 decimals)
     function getUSDCBalance(address _user) external view returns (uint256) {
         return s_balances[_user][i_usdc];
     }
