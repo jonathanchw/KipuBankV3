@@ -8,4 +8,9 @@ remappings = [
     "v2-periphery/=lib/v2-periphery/",
      "forge-std/=lib/forge-std/src/"
 ]
+
+# Configuración para Sepolia
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}" }
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

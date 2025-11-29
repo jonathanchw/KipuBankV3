@@ -41,38 +41,44 @@ The project was developed using **Foundry**, focusing on security, modularity, a
 
 ## Deployment Instructions
 
-### 1. Create `.env` file
+### Quick Deployment to Sepolia
+
+1. **Create `.env` file** with the required variables:
+   ```bash
+   PRIVATE_KEY=your_private_key
+   ADMIN=0xYourAdminAddress
+   SEPOLIA_UNI_V2_ROUTER=0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3
+   SEPOLIA_USDC=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
+   INITIAL_BANK_CAP_USDC=100000000000
+   ETHERSCAN_API_KEY=your_api_key
+   SEPOLIA_RPC_URL=https://rpc.sepolia.ethpandaops.io
+   ```
+
+2. **Build** the contracts:
+   ```bash
+   forge build
+   ```
+
+3. **Deploy** to Sepolia:
+   ```bash
+   forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script \
+     --rpc-url $SEPOLIA_RPC_URL \
+     --broadcast \
+     --verify \
+     --etherscan-api-key $ETHERSCAN_API_KEY \
+     -vvvv
+   ```
+
+### Deploy to Local Network (Anvil)
 
 ```bash
-PRIVATE_KEY=0xYOUR_PRIVATE_KEY_WITH_FUNDS_ON_SEPOLIA
-ADMIN=0xADMIN_ADDRESS
-SEPOLIA_UNI_V2_ROUTER=0xeE567Fe1712Faf6149d80dA1E6934E354124CfE3
-SEPOLIA_USDC=0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
-INITIAL_BANK_CAP_USDC=100000000000
-```
-
-### 2. Build
-
-```bash
-forge build
-```
-
-### 3. Deploy to Local Network (Anvil)
-
-```bash
+# Terminal 1: Start Anvil
 anvil
-```
 
-In another terminal:
-
-```bash
-forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script --rpc-url http://127.0.0.1:8545 --broadcast
-```
-
-### 4. Deploy to Sepolia
-
-```bash
-forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script --rpc-url https://rpc.sepolia.ethpandaops.io --broadcast --verify
+# Terminal 2: Deploy
+forge script script/KipuBankV3.s.sol:DeployKipuBankV3Script \
+  --rpc-url http://127.0.0.1:8545 \
+  --broadcast
 ```
 
 ---
@@ -153,5 +159,10 @@ forge coverage --report summary
 
 ## Links
 
-**Verified Contract (Sepolia):**  
-[https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code](https://sepolia.etherscan.io/address/0x8728130f647a9764877fd4E5fC712e2C43483213#code)
+### Verified Contracts (Sepolia)
+
+**KipuBankV3:**  
+[0x069a66013f955ceDa4102f8dE9951E6a3322BfBE](https://sepolia.etherscan.io/address/0x069a66013f955ceDa4102f8dE9951E6a3322BfBE#code)
+
+**Wrapper:**  
+[0x9ab127A87008aDBaE1C6BE54c619E790552F748b](https://sepolia.etherscan.io/address/0x9ab127A87008aDBaE1C6BE54c619E790552F748b#code)
